@@ -5,6 +5,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.graphics.drawable.Icon;
 import android.os.BatteryManager;
 import android.os.PowerManager;
@@ -15,11 +20,42 @@ import android.service.quicksettings.TileService;
 import com.cominatyou.batterytile.standalone.preferences.TileTextFormatter;
 
 import java.time.Duration;
+import java.util.Locale;
 
 public class QuickSettingsTileService extends TileService {
     private boolean isTappableTileEnabled = false;
     private boolean shouldEmulatePowerSaveTile = false;
     private boolean isCharging = false;
+
+    /**
+     * NEW METHOD: Dynamically draws text onto a Tile Icon.
+     * This allows us to show decimals (e.g., "33.6") which don't have pre-made images.
+     */
+    private Icon createDynamicIcon(String text) {
+        // 1. Create a blank square bitmap (high resolution for crisp text)
+        Bitmap bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        // 2. Setup the paint (White text, Bold)
+        Paint paint = new Paint();
+        paint.setColor(Color.WHITE); // QS Icons are tinted by the system, white is standard base
+        paint.setAntiAlias(true);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+        paint.setTextAlign(Paint.Align.CENTER);
+        
+        // 3. Adjust text size to fit decimals. 
+        // "33" fits easily at 60-70. "33.6" needs to be smaller, around 50.
+        paint.setTextSize(50f);
+
+        // 4. Calculate vertical center
+        float yPos = (canvas.getHeight() / 2f) - ((paint.descent() + paint.ascent()) / 2f);
+
+        // 5. Draw the text
+        canvas.drawText(text, canvas.getWidth() / 2f, yPos, paint);
+
+        // 6. Convert to Icon
+        return Icon.createWithBitmap(bitmap);
+    }
 
     private void setActiveLabelText(String text) {
         if (getSharedPreferences("preferences", Context.MODE_PRIVATE).getBoolean("infoInTitle", false)) {
@@ -35,8 +71,11 @@ public class QuickSettingsTileService extends TileService {
         final int plugState = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
         final int batteryState = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
 
-        // MODIFICATION: Get temperature (tenths of degree) and convert to whole number
-        final int temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10;
+        // MODIFICATION: Get exact decimal temperature
+        // Example: 336 -> 33.6
+        final float tempFloat = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10.0f;
+        // Format to 1 decimal place (e.g., "33.6")
+        final String tempText = String.format(Locale.US, "%.1f", tempFloat);
 
         final boolean isPluggedIn = plugState == BatteryManager.BATTERY_PLUGGED_AC || plugState == BatteryManager.BATTERY_PLUGGED_USB || plugState == BatteryManager.BATTERY_PLUGGED_WIRELESS;
         final boolean isFullyCharged = isPluggedIn && batteryState == BatteryManager.BATTERY_STATUS_FULL;
@@ -46,11 +85,11 @@ public class QuickSettingsTileService extends TileService {
             getQsTile().setState(isCharging ? Tile.STATE_INACTIVE : (getSystemService(PowerManager.class).isPowerSaveMode() ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE));
         }
 
+        // LOGIC: If user wants info as icon, generate the dynamic text icon
         if (getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("percentage_as_icon", false)) {
-            // MODIFICATION: Use 'temperature' instead of 'batteryLevel'
-            @SuppressLint("DiscouragedApi") final int iconId = getResources().getIdentifier("ic_tile_percent_" + temperature, "drawable", getPackageName());
-            getQsTile().setIcon(Icon.createWithResource(this, iconId == 0 ? R.drawable.ic_qs_battery : iconId));
-        } else if (isPluggedIn && getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("dynamic_tile_icon", true)) {
+            getQsTile().setIcon(createDynamicIcon(tempText));
+        } 
+        else if (isPluggedIn && getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("dynamic_tile_icon", true)) {
             switch (plugState) {
                 case BatteryManager.BATTERY_PLUGGED_AC -> getQsTile().setIcon(Icon.createWithResource(this, R.drawable.ic_power));
                 case BatteryManager.BATTERY_PLUGGED_USB -> getQsTile().setIcon(Icon.createWithResource(this, R.drawable.ic_usb));
@@ -72,11 +111,9 @@ public class QuickSettingsTileService extends TileService {
             } else {
                 final long remainingTime = getSystemService(BatteryManager.class).computeChargeTimeRemaining();
 
-                // computeChargeTimeRemaining() returns 0 at times for some reason, so check for < 1, not -1
                 if (remainingTime < 1) {
                     setActiveLabelText(getString(R.string.charging_no_time_estimate, batteryLevel));
                 } else if (remainingTime <= 60000) {
-                    // case for when less than 1m is remaining - duration returns 0 minutes if less than 1m which is undesirable
                     setActiveLabelText(getString(R.string.charging_less_than_one_hour_left, batteryLevel, 1));
                 } else {
                     Duration duration = Duration.ofMillis(remainingTime);
@@ -96,9 +133,8 @@ public class QuickSettingsTileService extends TileService {
             if (!isTappableTileEnabled) getQsTile().setState(getTileState(false));
 
             if (getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("percentage_as_icon", false)) {
-                // MODIFICATION: Use 'temperature' instead of 'batteryLevel'
-                @SuppressLint("DiscouragedApi") final int iconId = getResources().getIdentifier("ic_tile_percent_" + temperature, "drawable", getPackageName());
-                getQsTile().setIcon(Icon.createWithResource(this, iconId == 0 ? R.drawable.ic_qs_battery : iconId));
+                // Use the dynamic icon here as well for discharging state
+                getQsTile().setIcon(createDynamicIcon(tempText));
             } else {
                 getQsTile().setIcon(Icon.createWithResource(this, R.drawable.ic_qs_battery));
             }
