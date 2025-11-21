@@ -1,174 +1,92 @@
 package com.cominatyou.batterytile.standalone.debug;
 
-import android.Manifest;
-import android.annotation.SuppressLint;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.os.BatteryManager;
-
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.appcompat.app.AlertDialog;
 
 import com.cominatyou.batterytile.standalone.BuildConfig;
 import com.cominatyou.batterytile.standalone.R;
 
-import java.util.concurrent.ExecutorService;
+import java.util.Locale;
 
-public class DebugInfoCollector {
-    @SuppressLint({"DefaultLocale"})
-    protected void collectDebugInfo(final Context context, final AlertDialog dialog, final ExecutorService executorService) {
-        final StringBuilder debugInfo = new StringBuilder();
+public class DebugInfoCollector implements Runnable {
+    private final Context context;
+    private final AlertDialog dialog;
 
-        appendStaticInfo(context, debugInfo);
-        appendTileInfo(context, debugInfo);
-
-        final Intent initialBatteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if (initialBatteryIntent == null) {
-            System.err.println("Battery intent was null, aborting debug collection.");
-            context.getMainExecutor().execute(dialog::dismiss);
-            return;
-        }
-
-        final int status = initialBatteryIntent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-        final boolean isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
-        collectBatteryInfoPasses(context, dialog, debugInfo, isCharging);
-
-        if (!isCharging) {
-            context.getMainExecutor().execute(() -> dialog.setMessage(context.getString(R.string.debug_dialog_connect_to_power_description)));
-
-            final BroadcastReceiver chargingStateReceiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context ctx, Intent intent) {
-                    final int newStatus = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-                    if (newStatus == BatteryManager.BATTERY_STATUS_CHARGING || newStatus == BatteryManager.BATTERY_STATUS_FULL) {
-                        context.unregisterReceiver(this);
-                        // Use the provided executor to run the second collection pass off the main thread.
-                        executorService.submit(() -> {
-                            collectBatteryInfoPasses(context, dialog, debugInfo, true);
-                            shareReport(context, dialog, debugInfo.toString());
-                        });
-                    }
-                }
-            };
-            context.registerReceiver(chargingStateReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        } else {
-            context.getMainExecutor().execute(() -> dialog.setMessage(context.getString(R.string.debug_dialog_disconnect_from_power_description)));
-            final BroadcastReceiver dischargingStateReceiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context ctx, Intent intent) {
-                    final int newStatus = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-                    if (newStatus != BatteryManager.BATTERY_STATUS_CHARGING && newStatus != BatteryManager.BATTERY_STATUS_FULL) {
-                        context.unregisterReceiver(this);
-                        executorService.submit(() -> {
-                            collectBatteryInfoPasses(context, dialog, debugInfo, false);
-                            shareReport(context, dialog, debugInfo.toString());
-                        });
-                    }
-                }
-            };
-            context.registerReceiver(dischargingStateReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        }
+    // FIX: Added constructor to accept Context and AlertDialog
+    public DebugInfoCollector(Context context, AlertDialog dialog) {
+        this.context = context;
+        this.dialog = dialog;
     }
 
-    private static void collectBatteryInfoPasses(Context context, AlertDialog dialog, StringBuilder debugInfo, boolean isCharging) {
-        for (int i = 1; i <= 3; i++) {
-            final int passNumber = i;
-            context.getMainExecutor().execute(() -> dialog.setMessage(context.getString(R.string.debug_dialog_collecting_info_description, passNumber)));
+    @Override
+    public void run() {
+        try {
+            StringBuilder sb = new StringBuilder();
 
-            String infoBlock = getBatteryInfo(context, passNumber, isCharging);
-            debugInfo.append(infoBlock);
+            // 1. App & Device Info
+            sb.append("App Version: ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\n");
+            sb.append("Build Type: ").append(BuildConfig.BUILD_TYPE).append("\n");
+            sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
+            sb.append("Android: ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n\n");
 
-            // Don't sleep after the final pass.
-            if (i < 3) {
-                try {
-                    Thread.sleep(10000);
-                } catch (final InterruptedException e) {
-                    // If the thread is interrupted, restore the interrupted status and stop collecting.
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+            // 2. Battery Info
+            IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent batteryStatus = context.registerReceiver(null, filter);
+
+            if (batteryStatus != null) {
+                int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                float pct = level * 100 / (float) scale;
+
+                int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                int plugged = batteryStatus.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+                int voltage = batteryStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+                int temperature = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
+
+                sb.append("--- Battery Stats ---\n");
+                sb.append("Level: ").append(level).append("/").append(scale).append(" (").append(String.format(Locale.US, "%.1f%%", pct)).append(")\n");
+                sb.append("Status: ").append(statusToString(status)).append("\n");
+                sb.append("Source: ").append(pluggedToString(plugged)).append("\n");
+                sb.append("Voltage: ").append(voltage).append(" mV\n");
+                // Temp is in tenths of a degree
+                sb.append("Temp: ").append(temperature / 10.0f).append("°C\n");
+            } else {
+                sb.append("Error: Could not read battery intent.\n");
             }
+
+            // 3. Update the UI (Must be done on Main Thread)
+            String result = sb.toString();
+            new Handler(Looper.getMainLooper()).post(() -> dialog.setMessage(result));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            new Handler(Looper.getMainLooper()).post(() -> dialog.setMessage("Error collecting info: " + e.getMessage()));
         }
     }
 
-    private static String getBatteryInfo(final Context context, final int passNumber, final boolean isCharging) {
-        final BatteryManager bm = context.getSystemService(BatteryManager.class);
-        final Intent batteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+    private String statusToString(int status) {
+        return switch (status) {
+            case BatteryManager.BATTERY_STATUS_CHARGING -> "Charging";
+            case BatteryManager.BATTERY_STATUS_DISCHARGING -> "Discharging";
+            case BatteryManager.BATTERY_STATUS_FULL -> "Full";
+            case BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "Not Charging";
+            default -> "Unknown (" + status + ")";
+        };
+    }
 
-        if (batteryIntent == null) return "\n\nUnable to retrieve battery information (intent was null)";
-
-        final int instantaneousCurrent = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
-        final int averageCurrent = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE);
-        final int voltage = batteryIntent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0);
-        final float temperatureCelsius = batteryIntent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10f;
-        final int level = batteryIntent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
-        final long remainingChargeTime = bm.computeChargeTimeRemaining();
-
-        final String powerSource = switch (batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+    private String pluggedToString(int plugged) {
+        return switch (plugged) {
             case BatteryManager.BATTERY_PLUGGED_AC -> "AC";
             case BatteryManager.BATTERY_PLUGGED_USB -> "USB";
             case BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless";
-            default -> "Unplugged";
+            case 0 -> "Battery";
+            default -> "Unknown (" + plugged + ")";
         };
-
-        final String chargeStatus = isCharging ? "Charging" : "Discharging";
-        StringBuilder batteryInfo = new StringBuilder()
-                .append("\n--- Battery Info (Pass ").append(passNumber).append(", ").append(chargeStatus).append(") ---\n")
-                .append("Instantaneous Current: ").append(instantaneousCurrent).append(" µA\n")
-                .append("Average Current: ").append(averageCurrent).append(" µA\n")
-                .append("Voltage: ").append(voltage).append(" mV\n")
-                .append("Temperature: ").append(temperatureCelsius).append(" °C\n")
-                .append("Battery Level: ").append(level).append("%\n")
-                .append("Remaining Charge Time: ").append(remainingChargeTime == -1 ? "Unknown" : remainingChargeTime + "ms").append("\n");
-
-        if (isCharging) {
-            batteryInfo.append("Power Source Type: ").append(powerSource).append("\n");
-        }
-
-        return batteryInfo.toString();
-    }
-
-    private static void shareReport(final Context context, AlertDialog dialog, String report) {
-        final Intent intent = new Intent(Intent.ACTION_SEND);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_SUBJECT, "Battery Tile Debug Report");
-        intent.putExtra(Intent.EXTRA_TEXT, report);
-
-        context.startActivity(Intent.createChooser(intent, null));
-        context.getMainExecutor().execute(dialog::dismiss);
-    }
-
-    @SuppressLint("DefaultLocale")
-    private static void appendStaticInfo(final Context context, StringBuilder debugInfo) {
-        debugInfo
-                .append("--- Battery Tile Debug Report ---\n")
-                .append(String.format("Report compiled on %s\n", java.time.ZonedDateTime.now().toString()))
-                .append(String.format("App Version: %s (%s)\n", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE))
-                .append("App Variant: Standalone")
-                .append("\n\n--- Device Info ---\n")
-                .append(String.format("Device: %s %s (%s)\n", android.os.Build.MANUFACTURER, android.os.Build.DEVICE, android.os.Build.MODEL))
-                .append(String.format("Android Version: %s (SDK %d)\n", android.os.Build.VERSION.RELEASE, android.os.Build.VERSION.SDK_INT));
-
-        final boolean hasPermission = context.checkCallingOrSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED;
-        debugInfo.append(String.format("WRITE_SECURE_SETTINGS granted: %s", hasPermission ? "Yes" : "No"));
-    }
-
-    private static void appendTileInfo(Context context, StringBuilder debugInfo) {
-        final SharedPreferences prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE);
-        final String chargingText = prefs.getString("charging_text", "");
-        final String dischargingText = prefs.getString("discharging_text", "");
-
-        debugInfo
-                .append("\n\n--- Tile Info ---\n")
-                .append("Emulating Power Save Tile: ").append(prefs.getBoolean("emulatePowerSaveTile", false) ? "Yes" : "No").append("\n")
-                .append("Tile Info in Title: ").append(prefs.getBoolean("infoInTitle", false) ? "Yes" : "No").append("\n")
-                .append("Dynamic Tile Icon: ").append(prefs.getBoolean("dynamic_tile_icon", false) ? "Yes" : "No").append("\n")
-                .append("Tappable Tile: ").append(prefs.getBoolean("tappableTileEnabled", false) ? "Yes" : "No").append("\n")
-                .append("Tile State: ").append(prefs.getInt("tileState", 0)).append("\n")
-                .append("Charging Text: ").append(chargingText.isEmpty() ? "null" : chargingText).append("\n")
-                .append("Discharging Text: ").append(dischargingText.isEmpty() ? "null" : dischargingText).append("\n");
     }
 }
