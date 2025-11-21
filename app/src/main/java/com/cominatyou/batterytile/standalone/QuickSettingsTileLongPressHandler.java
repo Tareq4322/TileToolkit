@@ -5,9 +5,10 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.service.quicksettings.TileService;
 import android.widget.Toast;
 
-// Removed failing imports
+// We only import the services that actually exist
 import com.cominatyou.batterytile.standalone.DnsTileService;
 import com.cominatyou.batterytile.standalone.LockTileService;
 import com.cominatyou.batterytile.standalone.QuickSettingsTileService;
@@ -19,7 +20,7 @@ public class QuickSettingsTileLongPressHandler extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // FIX 1: Use Intent.EXTRA_COMPONENT_NAME instead of TileService.EXTRA_COMPONENT_NAME
+        // Get the component name of the tile that triggered this activity
         ComponentName componentName = getIntent().getParcelableExtra(Intent.EXTRA_COMPONENT_NAME);
 
         if (componentName == null) {
@@ -31,30 +32,28 @@ public class QuickSettingsTileLongPressHandler extends Activity {
         String className = componentName.getClassName();
         Intent targetIntent = null;
 
-        // --- TRAFFIC COP LOGIC ---
+        // --- ROUTING LOGIC ---
 
         // 1. Battery Tile -> System Battery Settings
         if (className.equals(QuickSettingsTileService.class.getName())) {
             targetIntent = new Intent(Intent.ACTION_POWER_USAGE_SUMMARY);
         }
-        
-        // 2. Wattage Tile (Removed to prevent build error since file doesn't exist yet)
-        
-        // 3. Volume Tile -> System Sound Settings
+
+        // 2. Volume Tile -> System Sound Settings
         else if (className.equals(VolumeTileService.class.getName())) {
             targetIntent = new Intent(Settings.ACTION_SOUND_SETTINGS);
         }
 
-        // 4. DNS Tile -> System Network Settings
+        // 3. DNS Tile -> System Network Settings
         else if (className.equals(DnsTileService.class.getName())) {
-            // FIX 2: Use string literal to avoid symbol errors on older compile SDKs
+            // Try the specific Network & Internet page first
             targetIntent = new Intent("android.settings.NETWORK_AND_INTERNET_SETTINGS");
         }
 
-        // 5. Lock Screen Tile -> This App's Settings (Tile Toolkit)
+        // 4. Lock Screen Tile -> This App's Settings
         else if (className.equals(LockTileService.class.getName())) {
             launchAppSettings();
-            finish(); // We launched it manually, so we can exit now
+            finish();
             return;
         }
 
@@ -62,16 +61,28 @@ public class QuickSettingsTileLongPressHandler extends Activity {
 
         if (targetIntent != null) {
             try {
-                if (targetIntent.resolveActivity(getPackageManager()) != null) {
-                    targetIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    startActivity(targetIntent);
-                } else {
-                    Toast.makeText(this, "Settings page not found", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(Settings.ACTION_SETTINGS));
-                }
+                // Try to launch the specific settings page
+                targetIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(targetIntent);
             } catch (Exception e) {
-                // Fallback just in case
-                startActivity(new Intent(Settings.ACTION_SETTINGS));
+                // ERROR HANDLER: If the specific page doesn't exist, fallback
+                if (className.equals(DnsTileService.class.getName())) {
+                    try {
+                        // Fallback for DNS: Wireless Settings (Universally available)
+                        Intent fallback = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+                        fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        startActivity(fallback);
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "Could not find Network Settings", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    // Fallback for others: Main Settings
+                    try {
+                        startActivity(new Intent(Settings.ACTION_SETTINGS));
+                    } catch (Exception ex2) {
+                        launchAppSettings();
+                    }
+                }
             }
         } else {
             launchAppSettings();
@@ -80,16 +91,22 @@ public class QuickSettingsTileLongPressHandler extends Activity {
         finish();
     }
 
-    // FIX 3: Dynamic launch method to avoid "cannot find symbol PreferencesActivity" error
+    // New Launch Method: Uses the Intent Action defined in Manifest
+    // This is safer than trying to import the class directly
     private void launchAppSettings() {
         try {
-            Intent intent = new Intent();
-            // explicitly point to the activity by string name
-            intent.setClassName(this, "com.cominatyou.batterytile.preferences.PreferencesActivity");
+            Intent intent = new Intent("android.intent.action.APPLICATION_PREFERENCES");
+            intent.setPackage(getPackageName()); // Ensure it opens THIS app's settings
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             startActivity(intent);
         } catch (Exception e) {
-            Toast.makeText(this, "Could not open App Settings", Toast.LENGTH_SHORT).show();
+            // Absolute worst case: try to find it by package name
+            try {
+                Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (intent != null) startActivity(intent);
+            } catch (Exception ex) {
+                Toast.makeText(this, "Could not open App Settings", Toast.LENGTH_SHORT).show();
+            }
         }
     }
 }
