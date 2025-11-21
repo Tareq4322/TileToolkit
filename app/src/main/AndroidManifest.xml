@@ -40,13 +40,6 @@
             </intent-filter>
         </service>
 
-        <!-- Ghost Activity for collapsing the shade -->
-        <activity android:name=".standalone.DummyActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:exported="false" />
-
         <activity android:name=".QuickSettingsTileLongPressHandler"
             android:exported="true">
             <intent-filter>
