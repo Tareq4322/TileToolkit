@@ -89,4 +89,4 @@ Private DNS is a "Secure" setting. Android requires explicit permission via ADB 
 
 Why are Battery Saver features "Experimental"?
 
-Android lacks an official API for apps to toggle Battery Saver. We use a workaround via ADB, which may occasionally conflict with the system toggle.rding this app.
+Android lacks an official API for apps to toggle Battery Saver. We use a workaround via ADB, which may occasionally conflict with the system toggle.
