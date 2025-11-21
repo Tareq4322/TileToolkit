@@ -4,7 +4,9 @@
 ]>
 
 <resources>
-    <string name="app_name">Battery Tile</string>
+    <!-- CHANGE THE NAME HERE -->
+    <string name="app_name">Tile Toolkit</string>
+    
     <string name="fully_charged">100% • Charged</string>
     <string name="charging_no_time_estimate">Charging • %1$d%%</string>
     <string name="charging_more_than_one_hour_left">%1$d%% • %2$dh %3$dm until full</string>
@@ -60,7 +62,7 @@
     <string name="bottom_sheet_preferences_dynamic_tile_icon_title">Dynamic tile icon</string>
     <string name="bottom_sheet_preferences_dynamic_tile_icon_description">Display the power source as the tile icon when charging</string>
     
-    <!-- MODIFIED LINES BELOW -->
+    <!-- KEPT YOUR PREVIOUS CHANGE -->
     <string name="bottom_sheet_preferences_percentage_as_tile_icon_title">Battery temperature as tile icon</string>
     <string name="bottom_sheet_preferences_percentage_as_tile_icon_description">Display the current battery temperature as the tile icon</string>
     
