@@ -294,4 +294,4 @@ public class QuickSettingsTileService extends TileService {
             unregisterReceiver(batteryStateReceiver);
         }
     }
-                }
+}
