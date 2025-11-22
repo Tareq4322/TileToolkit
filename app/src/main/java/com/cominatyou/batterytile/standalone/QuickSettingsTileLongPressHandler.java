@@ -63,11 +63,7 @@ public class QuickSettingsTileLongPressHandler extends Activity {
             
         }
 
-                // 5. Data SIM Tile -> Wireless Settings (Long press fallback)
-        else if (className.equals(DataSimTileService.class.getName())) {
-            targetIntent = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
-        }
-        
+                
         // --- EXECUTE ---
 
         if (targetIntent != null) {
