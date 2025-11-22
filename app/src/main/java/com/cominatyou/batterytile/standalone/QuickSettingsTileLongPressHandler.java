@@ -9,7 +9,6 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Toast;
 
-import com.cominatyou.batterytile.standalone.CaffeineTileService;
 import com.cominatyou.batterytile.standalone.DnsTileService;
 import com.cominatyou.batterytile.standalone.LockTileService;
 import com.cominatyou.batterytile.standalone.QuickSettingsTileService;
@@ -24,7 +23,6 @@ public class QuickSettingsTileLongPressHandler extends Activity {
         super.onCreate(savedInstanceState);
 
         // Get the component name of the tile that triggered this activity
-        // Using Intent.EXTRA_COMPONENT_NAME is safer for compatibility
         ComponentName componentName = getIntent().getParcelableExtra(Intent.EXTRA_COMPONENT_NAME);
 
         if (componentName == null) {
@@ -60,10 +58,7 @@ public class QuickSettingsTileLongPressHandler extends Activity {
             return;
         }
 
-        // 5. Caffeine Tile -> Display Settings (Screen Timeout)
-        else if (className.equals(CaffeineTileService.class.getName())) {
-            targetIntent = new Intent(Settings.ACTION_DISPLAY_SETTINGS);
-        }
+        // REMOVED: Caffeine Tile logic (Service deleted)
 
         // --- EXECUTE ---
 
