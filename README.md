@@ -24,7 +24,6 @@ Quick Access: Instantly opens the system volume panel.
 
 Hardware Saver: Reduces wear on physical volume buttons.
 
-Visual Feedback: Lights up briefly to confirm action.
 
 🔒 Lock Screen Tile
 
