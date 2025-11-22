@@ -39,8 +39,12 @@ public class CaffeineTileService extends TileService {
 
         try {
             if (KeepAwakeService.isRunning) {
-                stopService(intent);
+                // Explicitly tell it to stop
+                intent.setAction(KeepAwakeService.ACTION_STOP);
+                startService(intent);
             } else {
+                // Start bright by default
+                intent.setAction(KeepAwakeService.ACTION_START_BRIGHT);
                 // Wrapped in try-catch to handle background start restrictions
                 startForegroundService(intent);
             }
