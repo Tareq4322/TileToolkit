@@ -20,53 +20,53 @@ public class LockTileService extends TileService {
     public void onStartListening() {
         Tile tile = getQsTile();
         if (tile == null) return;
-
         tile.setLabel("Lock Screen");
-        
-        // VISUALS: Always show as INACTIVE (Grey)
-        // This makes it look like a clickable button rather than a toggle switch
         tile.setState(Tile.STATE_INACTIVE);
-        
         tile.setIcon(Icon.createWithResource(this, R.drawable.ic_lock));
         tile.updateTile();
     }
 
     @Override
     public void onClick() {
-        // Spam filter: prevent accidental double-taps
         if (SystemClock.elapsedRealtime() - lastClickTime < CLICK_COOLDOWN) {
             return;
         }
         lastClickTime = SystemClock.elapsedRealtime();
 
-        // Check permission and lock
-        if (TileAccessibilityService.isServiceEnabled(this)) {
-            Intent intent = new Intent(this, TileAccessibilityService.class);
-            intent.setAction(TileAccessibilityService.ACTION_LOCK_SCREEN);
-            startService(intent);
-        } else {
-            // Permission missing? Send to settings
-            Toast.makeText(this, "Please enable 'Tile Toolkit' in Accessibility Settings", Toast.LENGTH_LONG).show();
-            
-            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-
-            try {
-                if (Build.VERSION.SDK_INT >= 34) {
-                    PendingIntent pendingIntent = PendingIntent.getActivity(
-                        this, 
-                        0, 
-                        intent, 
-                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-                    );
-                    startActivityAndCollapse(pendingIntent);
-                } else {
-                    startActivityAndCollapse(intent);
+        // --- NEW LOGIC START ---
+        // Try to lock using the static instance directly
+        boolean success = TileAccessibilityService.requestLock();
+        
+        // If success is false, it means the service is not running/enabled
+        if (!success) {
+            // Double check via settings (just in case)
+            if (TileAccessibilityService.isServiceEnabled(this)) {
+                // If settings say it's on, but 'instance' is null, the system killed it.
+                // We can't force restart it easily, but usually this state is rare with the new code.
+                Toast.makeText(this, "Service is restarting...", Toast.LENGTH_SHORT).show();
+            } else {
+                // Permission is definitely missing
+                Toast.makeText(this, "Enable Accessibility for QS Toolkit", Toast.LENGTH_LONG).show();
+                
+                Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                try {
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        PendingIntent pendingIntent = PendingIntent.getActivity(
+                            this, 
+                            0, 
+                            intent, 
+                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                        );
+                        startActivityAndCollapse(pendingIntent);
+                    } else {
+                        startActivityAndCollapse(intent);
+                    }
+                } catch (Exception e) {
+                    Log.e("LockTileService", "Failed to launch settings", e);
                 }
-            } catch (Exception e) {
-                Log.e("LockTileService", "Failed to launch settings", e);
-                Toast.makeText(this, "Could not open settings.", Toast.LENGTH_SHORT).show();
             }
         }
+        // --- NEW LOGIC END ---
     }
 }
